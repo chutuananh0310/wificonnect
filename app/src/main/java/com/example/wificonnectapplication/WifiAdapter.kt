@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.app.AlertDialog
 import android.app.ProgressDialog
-
+import com.example.wificonnectapplication.WifiUtil.connectWifi
 
 
 class WifiAdapter(
@@ -73,28 +73,31 @@ class WifiAdapter(
 //                // Hiển thị thông báo lỗi cho người dùng
 //            }
 
-            WifiUtil.scanWifiNetworks(context) { scanResults ->
-                // Xử lý kết quả quét
-                for (result in scanResults) {
-                    // ...
-                }
-            }
+//            WifiUtil.scanWifiNetworks(context) { scanResults ->
+//                // Xử lý kết quả quét
+//                for (result in scanResults) {
+//                    // ...
+//                }
+//            }
 
             // Kết nối đến mạng Wi-Fi khi cần
             // WifiUtil.connectToWifi(this, "Tên_WiFi", "Mật_Khẩu")
 //            val success = WifiHelper.connect(context, wifi.ssid, wifi.password)
 //            val success = WifiUtil.connectToWifi2(context, wifi.ssid, wifi.password)
 
-            progressDialog = ProgressDialog(context).apply { // 'this' là Activity context
-                setMessage("Đang kết nối với ${wifi.ssid}...")
-                setCancelable(false) // Không cho phép người dùng hủy bằng cách chạm ra ngoài
-                show()
-            }
+//            progressDialog = ProgressDialog(context).apply { // 'this' là Activity context
+//                setMessage("Đang kết nối với ${wifi.ssid}...")
+//                setCancelable(false) // Không cho phép người dùng hủy bằng cách chạm ra ngoài
+//                show()
+//            }
 
             Toast.makeText(context, "Đang kết nối với " + wifi.ssid, Toast.LENGTH_SHORT).show()
             GlobalScope.launch {
-                val isConnected = connectToWifiAndWaitForConnection(context, wifi.ssid, wifi.password)
-                progressDialog?.dismiss() // Đóng dialog khi kết nối xong
+//                val isConnected = connectToWifiAndWaitForConnection(context, wifi.ssid, wifi.password)
+                val isConnected = connectWifi(context, wifi.ssid, wifi.password)
+
+
+//                progressDialog?.dismiss() // Đóng dialog khi kết nối xong
                 if (isConnected) {
                     Log.d("WifiUtil", "Kết nối thành công với " + wifi.ssid)
                     // Thực hiện các hành động sau khi kết nối thành công

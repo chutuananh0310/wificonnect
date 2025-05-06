@@ -30,11 +30,20 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
+import androidx.appcompat.app.AlertDialog
+import android.provider.Settings
+import android.net.wifi.WifiNetworkSpecifier
+import android.net.wifi.WifiNetworkSuggestion
+import androidx.fragment.app.FragmentActivity
+import com.example.wificonnectapplication.PermissionChecker.checkChangeWifiStatePermission
+import com.example.wificonnectapplication.PermissionChecker.checkWriteSettingsPermission
 
 
 object WifiUtil {
 
     private const val TAG = "WifiUtil"
+    private const val REQUEST_LOCATION_SETTINGS = 123 // Mã request duy nhất
+
 
     fun isWifiEnabled(context: Context): Boolean {
         val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -254,7 +263,27 @@ object WifiUtil {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            continuation.resume(false) // Không có quyền
+//            continuation.resume(false) // Không có quyền
+            // Hiển thị AlertDialog trên UI thread
+            (context as? androidx.fragment.app.FragmentActivity)?.runOnUiThread {
+                AlertDialog.Builder(context)
+                    .setTitle("Yêu cầu quyền vị trí")
+                    .setMessage("Ứng dụng cần quyền vị trí để quét và kết nối Wi-Fi. Vui lòng cấp quyền trong cài đặt.")
+                    .setPositiveButton("Đi tới cài đặt") { _, _ ->
+                        // Mở cài đặt ứng dụng để người dùng cấp quyền
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            val uri = android.net.Uri.fromParts("package", context.packageName, null)
+                            data = uri
+                        }
+                        context.startActivity(intent)
+                        continuation.resume(false) // Tiếp tục coroutine với kết quả false (chưa có quyền)
+                    }
+                    .setNegativeButton("Hủy") { _, _ ->
+                        continuation.resume(false) // Người dùng hủy
+                    }
+                    .setCancelable(false) // Không cho phép đóng bằng cách chạm ra ngoài
+                    .show()
+            }
             return@suspendCancellableCoroutine
         }
 
@@ -305,6 +334,12 @@ object WifiUtil {
                         connectivityManager.unregisterNetworkCallback(this)
                         continuation.resume(true)
                     }
+                    else
+                    {
+                        Log.d(TAG, "không thể kết nối đến SSID: ${currentWifiInfo.ssid}")
+                        connectivityManager.unregisterNetworkCallback(this)
+                        continuation.resume(false)
+                    }
                 }
             }
 
@@ -331,6 +366,171 @@ object WifiUtil {
         }
     }
 
+    suspend fun connectWifi(
+        context: Context,
+        ssid: String,
+        password: String? = null
+    ): Boolean = suspendCancellableCoroutine { continuation ->
+        val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        // Kiểm tra và yêu cầu quyền vị trí (cho Android M trở lên)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            (context as? FragmentActivity)?.runOnUiThread {
+                AlertDialog.Builder(context)
+                    .setTitle("Yêu cầu quyền vị trí")
+                    .setMessage("Ứng dụng cần quyền vị trí để quét và kết nối Wi-Fi. Vui lòng cấp quyền trong cài đặt.")
+                    .setPositiveButton("Đi tới cài đặt") { _, _ ->
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            val uri = android.net.Uri.fromParts("package", context.packageName, null)
+                            data = uri
+                        }
+                        context.startActivity(intent)
+                        continuation.resume(false)
+                    }
+                    .setNegativeButton("Hủy") { _, _ ->
+                        continuation.resume(false)
+                    }
+                    .setCancelable(false)
+                    .show()
+            }
+            return@suspendCancellableCoroutine
+        }
+
+        // Kiểm tra quyền thay đổi trạng thái Wi-Fi
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CHANGE_WIFI_STATE) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Ứng dụng thiếu quyền CHANGE_WIFI_STATE")
+            continuation.resume(false)
+            return@suspendCancellableCoroutine
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Gọi hàm này ở nơi bạn muốn kiểm tra quyền
+            val hasChangeWifiStatePermission = checkChangeWifiStatePermission(context)
+            Log.d(TAG, "Quyền CHANGE_WIFI_STATE được cấp: $hasChangeWifiStatePermission")
+
+                val hasWriteSettingsPermission = checkWriteSettingsPermission(context)
+            Log.d(TAG, "Quyền WRITE_SETTINGS được cấp: $hasWriteSettingsPermission")
+
+            // Sử dụng WifiNetworkSpecifier cho Android 10 trở lên
+            val specifier = WifiNetworkSpecifier.Builder()
+                .setSsid(ssid)
+                .setWpa2Passphrase(password!!) // hoặc setOpenNetwork(true), setWpa3Passphrase(), etc.
+                .build()
+
+            val networkRequest = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .setNetworkSpecifier(specifier)
+                .build()
+
+            try {
+
+                val networkCallback = object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        Log.d(TAG, "Đã kết nối thành công với SSID: $ssid (Android 10+)")
+                        connectivityManager.unregisterNetworkCallback(this)
+                        continuation.resume(true)
+                    }
+
+                    override fun onUnavailable() {
+                        Log.w(TAG, "Không thể kết nối với SSID: $ssid (Android 10+)")
+                        connectivityManager.unregisterNetworkCallback(this)
+                        continuation.resume(false)
+                    }
+
+                    override fun onLost(network: Network) {
+                        Log.w(TAG, "Kết nối với SSID: $ssid bị mất (Android 10+)")
+                        connectivityManager.unregisterNetworkCallback(this)
+                        continuation.resume(false)
+                    }
+                }
+
+
+                connectivityManager.requestNetwork(networkRequest, networkCallback)
+                continuation.invokeOnCancellation {
+                    connectivityManager.unregisterNetworkCallback(networkCallback)
+                }
+            }
+            catch (e: Exception)
+            {
+                Log.e("WifiUtil", "Lỗi khi requestNetwork: ${e.message}", e) // In cả stack trace
+            }
+
+
+
+        } else {
+            // Sử dụng phương pháp addNetwork cho Android 9 trở xuống
+            val wifiConfig = WifiConfiguration().apply {
+                this.SSID = "\"${ssid}\""
+                when {
+                    password.isNullOrEmpty() -> allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE)
+                    else -> {
+                        allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_PSK)
+                        preSharedKey = "\"${password}\""
+                    }
+                }
+            }
+
+            val netId = wifiManager.configuredNetworks?.firstOrNull { it.SSID == wifiConfig.SSID }?.networkId ?: -1
+            val addNetworkId = if (netId == -1) wifiManager.addNetwork(wifiConfig) else {
+                wifiConfig.networkId = netId
+                wifiManager.updateNetwork(wifiConfig)
+            }
+
+            if (addNetworkId != -1 || netId != -1) {
+                wifiManager.disconnect()
+                val networkIdToEnable = if (addNetworkId != -1) addNetworkId else netId
+                wifiManager.enableNetwork(networkIdToEnable, true)
+                wifiManager.reconnect()
+
+                val networkRequest = NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .build()
+
+                val networkCallback = object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        val activeNetwork = connectivityManager.getNetworkCapabilities(network)
+                        if (activeNetwork?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
+                            val currentWifiInfo = wifiManager.connectionInfo
+                            if (currentWifiInfo != null && currentWifiInfo.ssid.equals("\"${ssid}\"", ignoreCase = true)) {
+                                Log.d(TAG, "Đã kết nối thành công với SSID: ${currentWifiInfo.ssid} (Android 9-)")
+                                connectivityManager.unregisterNetworkCallback(this)
+                                continuation.resume(true)
+                            } else {
+                                Log.w(TAG, "Đã kết nối Wi-Fi nhưng không phải SSID mong muốn (Android 9-)")
+                                connectivityManager.unregisterNetworkCallback(this)
+                                continuation.resume(false)
+                            }
+                        }
+                    }
+
+                    override fun onLost(network: Network) {
+                        val activeNetwork = connectivityManager.getNetworkCapabilities(network)
+                        if (activeNetwork?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
+                            Log.w(TAG, "Kết nối Wi-Fi bị mất (Android 9-)")
+                            connectivityManager.unregisterNetworkCallback(this)
+                            continuation.resume(false)
+                        }
+                    }
+
+                    override fun onUnavailable() {
+                        Log.w(TAG, "Không thể kết nối Wi-Fi (Android 9-)")
+                        connectivityManager.unregisterNetworkCallback(this)
+                        continuation.resume(false)
+                    }
+                }
+                connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
+                continuation.invokeOnCancellation {
+                    connectivityManager.unregisterNetworkCallback(networkCallback)
+                }
+
+            } else {
+                Log.e(TAG, "Không thể thêm hoặc cập nhật mạng (Android 9-)")
+                continuation.resume(false)
+            }
+        }
+    }
 
     fun disconnectWifi(context: Context) {
         val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
