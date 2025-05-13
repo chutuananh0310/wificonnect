@@ -1,9 +1,12 @@
 package com.example.wificonnectapplication
 
 import android.app.AlertDialog
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.LayoutInflater
@@ -22,6 +25,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.os.Process
 import android.util.Log
+import android.provider.Settings
+import android.text.TextUtils
+import kotlin.jvm.java
 
 private const val PREF_NAME = "ImportSettings"
 private const val KEY_IMPORT_LINK = "importLink"
@@ -34,7 +40,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: WifiAdapter
     private var wifiList: MutableList<WifiEntity> = mutableListOf() // Khởi tạo với một danh sách rỗng
 
-
+    private val accessibilityServiceId by lazy {
+        ComponentName(this, WifiAccessibilityService::class.java).flattenToString()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +60,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         WifiUtil.setWifiEnabled(this, true) // Bật Wi-Fi
+
+        checkAndRequestAccessibility()
 
 
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -235,6 +245,59 @@ class MainActivity : AppCompatActivity() {
         val editor = prefs.edit()
         editor.putString(KEY_IMPORT_LINK, link)
         editor.apply() // Hoặc editor.commit() để lưu đồng bộ (nên dùng apply cho background)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkAndRequestAccessibility()
+    }
+
+    private fun checkAndRequestAccessibility() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (!isAccessibilityServiceEnabled(this, accessibilityServiceId)) {
+                Log.d("WiFiConnect", "⚠️ Trợ năng chưa được bật. Hiển thị cảnh báo...")
+
+                AlertDialog.Builder(this)
+                    .setTitle("Yêu cầu quyền Trợ năng")
+                    .setMessage("Ứng dụng cần quyền Trợ năng để tự động kết nối Wi-Fi.\n\nBấm OK để mở cài đặt và cấp quyền.")
+                    .setCancelable(false) // không cho bấm ra ngoài
+                    .setPositiveButton("OK") { _, _ ->
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        startActivity(intent)
+                    }
+                    .show()
+            } else {
+                Log.d("WiFiConnect", "✅ Trợ năng đã được bật.")
+                // Có thể tiếp tục thực hiện kết nối Wi-Fi ở đây
+            }
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(context: Context, serviceId: String): Boolean {
+        val enabled = try {
+            Settings.Secure.getInt(
+                context.contentResolver,
+                Settings.Secure.ACCESSIBILITY_ENABLED
+            )
+        } catch (e: Settings.SettingNotFoundException) {
+            0
+        }
+
+        if (enabled == 1) {
+            val settingValue = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            val colonSplitter = TextUtils.SimpleStringSplitter(':')
+            colonSplitter.setString(settingValue)
+            while (colonSplitter.hasNext()) {
+                if (colonSplitter.next().equals(serviceId, ignoreCase = true)) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
 }
