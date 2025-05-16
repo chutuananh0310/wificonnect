@@ -18,8 +18,8 @@ class WifiAccessibilityService : AccessibilityService() {
 
     private var retryCount = 0
     private val maxRetry = 5
-    private val retryDelayMs = 2000L
-
+    private val retryDelayMs = 2500L
+    private var isScrollingBackUp = false
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         Log.d("WifiConnect", "onAccessibilityEvent")
@@ -45,6 +45,7 @@ class WifiAccessibilityService : AccessibilityService() {
         Log.d("WifiConnect", "onAccessibilityEvent ssid: $targetSSID")
         Log.d("WifiConnect", "onAccessibilityEvent password: $wifiPassword")
 
+        scrollToTopOfWifiList(rootInActiveWindow)
         attemptClickSSID(rootNode, targetSSID, wifiPassword)
     }
 
@@ -137,7 +138,7 @@ class WifiAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun attemptClickSSID(root: AccessibilityNodeInfo?, ssid: String, password: String) {
+    private fun attemptClickSSID_old(root: AccessibilityNodeInfo?, ssid: String, password: String) {
         if (root == null) return
 
         Log.d("WiFiConnect", "Attempting to click SSID: $ssid (retry $retryCount/$maxRetry)")
@@ -169,6 +170,72 @@ class WifiAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun attemptClickSSID_o1(root: AccessibilityNodeInfo?, ssid: String, password: String) {
+        if (root == null) return
+
+        Log.d("WiFiConnect", "🔍 Đang tìm SSID: $ssid (thử lại $retryCount)")
+
+        if (clickParentNodeByText(root, ssid)) {
+            retryCount = 0
+            Handler(Looper.getMainLooper()).postDelayed({
+                handlePasswordOrCheckConnection(rootInActiveWindow, ssid, password)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    tryBackToApp(rootInActiveWindow, ssid)
+                }, 3000)
+            }, 1500)
+        } else if (!isAtEndOfWifiList(root)) {
+            retryCount++
+            Log.d("WiFiConnect", "❌ Chưa thấy SSID. Scroll tiếp...")
+            scrollWifiList(rootInActiveWindow)
+            Handler(Looper.getMainLooper()).postDelayed({
+                attemptClickSSID(rootInActiveWindow, ssid, password)
+            }, retryDelayMs)
+        } else {
+            Log.w("WiFiConnect", "⚠️ Đã đến cuối danh sách. Không tìm thấy SSID '$ssid'. Dừng lại.")
+            retryCount = 0
+        }
+    }
+
+    private fun attemptClickSSID(root: AccessibilityNodeInfo?, ssid: String, password: String) {
+        if (root == null) return
+
+        Log.d("WiFiConnect", "🔍 Đang tìm SSID: $ssid (thử lại $retryCount)")
+
+        if (clickParentNodeByText(root, ssid)) {
+            retryCount = 0
+            isScrollingBackUp = false
+            Log.d("WiFiConnect", "✅ Tìm thấy SSID và đã click.")
+            Handler(Looper.getMainLooper()).postDelayed({
+                handlePasswordOrCheckConnection(rootInActiveWindow, ssid, password)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    tryBackToApp(rootInActiveWindow, ssid)
+                }, 3000)
+            }, 1500)
+        } else {
+            val canScroll: Boolean = if (!isScrollingBackUp && !isAtEndOfWifiList(root)) {
+                Log.d("WiFiConnect", "📜 Đang scroll xuống...")
+                scrollWifiList(rootInActiveWindow)
+            } else {
+                isScrollingBackUp = true
+                Log.d("WiFiConnect", "🔼 Scroll lên tìm lại SSID...")
+                scrollWifiListUp(rootInActiveWindow)
+            }
+
+            if (canScroll) {
+                retryCount++
+                Handler(Looper.getMainLooper()).postDelayed({
+                    attemptClickSSID(rootInActiveWindow, ssid, password)
+                }, retryDelayMs)
+            } else {
+                Log.w("WiFiConnect", "⚠️ Đã scroll cả lên và xuống mà không tìm thấy SSID '$ssid'. Dừng lại.")
+                retryCount = 0
+                isScrollingBackUp = false
+            }
+        }
+    }
+
+
+
     private fun scrollWifiList(root: AccessibilityNodeInfo): Boolean {
         Log.d("WiFiConnect", "Scrolling Wi-Fi list.")
         val list = findScrollableNode(root)
@@ -185,7 +252,7 @@ class WifiAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun isConnectedToTargetSSID(targetSSID: String): Boolean {
+    private fun isConnectedToTargetSSID_old(targetSSID: String): Boolean {
 
         val wifiManager = applicationContext.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val connectivityManager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -206,6 +273,40 @@ class WifiAccessibilityService : AccessibilityService() {
 
         return isCorrectSSID
     }
+
+    private fun isConnectedToTargetSSID(targetSSID: String): Boolean {
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val connectivityManager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        var currentSSID: String? = null
+        var attempt = 0
+        val maxAttempts = 10 // tổng thời gian chờ ~5 giây
+        val delayMs = 800L
+
+        while (attempt < maxAttempts) {
+            val network = connectivityManager.activeNetwork
+            val capabilities = connectivityManager.getNetworkCapabilities(network)
+            val info = wifiManager.connectionInfo
+            currentSSID = info.ssid?.removePrefix("\"")?.removeSuffix("\"")
+
+            Log.d("WiFiConnect", "🔄 Checking current SSID (attempt $attempt): $currentSSID")
+
+            if (currentSSID != null && currentSSID != "<unknown ssid>") {
+                break
+            }
+
+            Thread.sleep(delayMs)
+            attempt++
+        }
+
+        val isCorrectSSID = currentSSID == targetSSID
+
+        Log.d("WiFiConnect", "🔍 Kết quả kiểm tra:")
+        Log.d("WiFiConnect", "➡️ SSID hiện tại: $currentSSID - So với SSID mong muốn: $targetSSID")
+
+        return isCorrectSSID
+    }
+
 
     private fun tryBackToApp(root: AccessibilityNodeInfo?, ssid: String) {
         Log.d("WiFiConnect", "Trying to back to app after connection.")
@@ -230,5 +331,65 @@ class WifiAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun isAtEndOfWifiList(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+
+        // 1. Kiểm tra không còn scroll được nữa
+        val scrollableNode = findScrollableNode(root)
+        val canScroll = scrollableNode?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) == true
+
+        // 2. Kiểm tra nếu có dòng 'Add network' hoặc 'Wi-Fi preferences'
+        val endTexts = listOf("Add network", "Wi-Fi preferences", "Thêm mạng", "Tùy chọn Wi-Fi")
+        for (text in endTexts) {
+            val nodes = root.findAccessibilityNodeInfosByText(text)
+            if (nodes != null && nodes.isNotEmpty()) {
+                Log.d("WiFiConnect", "Phát hiện cuối danh sách qua text: $text")
+                return true
+            }
+        }
+
+        if (!canScroll) {
+            Log.d("WiFiConnect", "Không còn scroll được nữa, đã đến cuối danh sách.")
+            return true
+        }
+
+        return false
+    }
+
+    private fun scrollToTopOfWifiList(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+
+        val scrollableNode = findScrollableNode(root)
+        if (scrollableNode == null) {
+            Log.w("WiFiConnect", "Không tìm thấy node có thể scroll.")
+            return false
+        }
+
+        var scrolled = false
+        var attempt = 0
+        val maxAttempts = 15 // giới hạn để tránh loop vô tận
+
+        while (attempt < maxAttempts) {
+            val success = scrollableNode.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+            if (!success) {
+                Log.d("WiFiConnect", "Đã cuộn lên đầu danh sách hoặc không thể scroll tiếp.")
+                break
+            } else {
+                Log.d("WiFiConnect", "Đang scroll ngược lên (lần $attempt)")
+                scrolled = true
+            }
+            attempt++
+            Thread.sleep(300) // nghỉ một chút giữa các lần cuộn
+        }
+
+        return scrolled
+    }
+
+    private fun scrollWifiListUp(root: AccessibilityNodeInfo?): Boolean {
+        val list = findScrollableNode(root ?: return false)
+        val result = list?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+        Log.d("WiFiConnect", "⬆️ Scroll ngược: $result")
+        return result!!
+    }
 
 }
