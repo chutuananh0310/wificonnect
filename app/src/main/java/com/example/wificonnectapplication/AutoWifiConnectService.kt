@@ -26,7 +26,7 @@ class WifiAccessibilityService : AccessibilityService() {
 
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
-        Log.d("WifiConnect", "onAccessibilityEvent")
+        Log.d("WifiConnect", "onAccessibilityEvent start")
 
         val prefs = getSharedPreferences("wifi_prefs", Context.MODE_PRIVATE)
         val shouldRun = prefs.getBoolean("should_run_accessibility", false)
