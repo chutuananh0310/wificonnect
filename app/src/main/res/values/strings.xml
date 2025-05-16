@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Wifi Connect Application</string>
+    <string name="accessibility_service_description">Tự động chọn Wi-Fi mong muốn</string>
 </resources>

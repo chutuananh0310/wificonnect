@@ -22,10 +22,16 @@ class WifiAccessibilityService : AccessibilityService() {
 
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        Log.d("WifiConnect", "onAccessibilityEvent")
+
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+
+        Log.d("WifiConnect", "onAccessibilityEvent")
 
         val prefs = getSharedPreferences("wifi_prefs", Context.MODE_PRIVATE)
         val shouldRun = prefs.getBoolean("should_run_accessibility", false)
+        Log.d("WifiConnect", "onAccessibilityEvent should_run_accessibility: $shouldRun")
+
         if (!shouldRun) return
 
         val rootNode = event.source ?: return
@@ -36,8 +42,14 @@ class WifiAccessibilityService : AccessibilityService() {
 
         val targetSSID = prefs.getString("ssid", null) ?: return
         val wifiPassword = prefs.getString("password", null) ?: return
+        Log.d("WifiConnect", "onAccessibilityEvent ssid: $targetSSID")
+        Log.d("WifiConnect", "onAccessibilityEvent password: $wifiPassword")
 
         attemptClickSSID(rootNode, targetSSID, wifiPassword)
+    }
+
+    override fun onServiceConnected() {
+        Log.d("WiFiConnect", "✅ WifiAccessibilityService đã được bật")
     }
 
     override fun onInterrupt() {}

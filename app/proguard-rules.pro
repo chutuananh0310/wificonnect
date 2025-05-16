@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Giữ lại WifiAccessibilityService
+-keep class com.example.wificonnectapplication.WifiAccessibilityService { *; }
+
+# Giữ lại file cấu hình trợ năng
+-keepresources xml/accessibility_service_config.xml

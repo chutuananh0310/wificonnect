@@ -405,6 +405,7 @@ object WifiUtil {
         }
 
         // Kiểm tra quyền thay đổi trạng thái Wi-Fi
+        Log.d(TAG, "Kiểm tra quyền thay đổi trạng thái Wi-Fi")
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CHANGE_WIFI_STATE) != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "Ứng dụng thiếu quyền CHANGE_WIFI_STATE")
             continuation.resume(false)
@@ -412,11 +413,11 @@ object WifiUtil {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Log.d(TAG, "1 Build.VERSION" + Build.VERSION.SDK_INT)
             openWifiSettingsWithSuggestion(context, ssid, password.toString())
         }
         else {
-
-
+            Log.d(TAG, "2 Build.VERSION" + Build.VERSION.SDK_INT)
             val networkCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     val activeNetwork = connectivityManager.getNetworkCapabilities(network)
@@ -1271,15 +1272,16 @@ object WifiUtil {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
-
-        context.startActivity(intent)
-
+        Log.d("WifiConnect", "wifi_prefs $ssid | $password")
         val prefs = context.applicationContext.getSharedPreferences("wifi_prefs", MODE_PRIVATE)
         prefs.edit()
             .putBoolean("should_run_accessibility", true)
             .putString("ssid", ssid)
             .putString("password", password)
             .apply()
+
+        context.startActivity(intent)
+
 
 
     }
