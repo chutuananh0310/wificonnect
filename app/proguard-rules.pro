@@ -25,3 +25,7 @@
 
 # Giữ lại file cấu hình trợ năng
 -keepresources xml/accessibility_service_config.xml
+
+# Đừng tối ưu hoặc xoá AccessibilityService
+-keep class com.example.wificonnectapplication.WifiAccessibilityService { *; }
+-keep class * extends android.accessibilityservice.AccessibilityService

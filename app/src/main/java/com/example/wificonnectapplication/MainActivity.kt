@@ -61,6 +61,12 @@ class MainActivity : AppCompatActivity() {
 
         WifiUtil.setWifiEnabled(this, true) // Bật Wi-Fi
 
+        // Khi app khởi động, ép khởi động lại AccessibilityService (nếu đã được bật)
+        if (isAccessibilityServiceEnabled(this, "com.example.wificonnectapplication/.WifiAccessibilityService")) {
+            Log.d("WiFiConnect", "✔ Trợ năng đã bật, thử gọi lại một hành động nhỏ để khởi động Service.")
+            // Có thể thử kích hoạt lại UI logic hoặc bắn 1 broadcast giả để kích service
+        }
+
         checkAndRequestAccessibility()
 
 

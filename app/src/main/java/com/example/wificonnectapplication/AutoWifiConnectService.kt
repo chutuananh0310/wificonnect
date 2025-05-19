@@ -22,7 +22,7 @@ class WifiAccessibilityService : AccessibilityService() {
     private var isScrollingBackUp = false
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        Log.d("WifiConnect", "onAccessibilityEvent")
+        Log.d("WifiAccessibilityService", "📡 Nhận sự kiện: ${event?.eventType}")
 
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
@@ -50,10 +50,14 @@ class WifiAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
-        Log.d("WiFiConnect", "✅ WifiAccessibilityService đã được bật")
+        super.onServiceConnected()
+        Log.d("WifiAccessibilityService", "✅ Service đã được kết nối.")
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        Log.d("WifiAccessibilityService", "⚠ Service bị ngắt.")
+    }
+
 
     private fun clickNodeByText(root: AccessibilityNodeInfo, text: String): Boolean {
         Log.d("WiFiConnect", "Attempting to click node with text: $text")
