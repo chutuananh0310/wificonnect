@@ -999,23 +999,6 @@ object WifiUtil {
     fun connectToWifiRoot(context: Context, ssid: String, password: String) {
         fun log(message: String) = Log.d("WifiConnect", message)
 
-        fun runRootCommand(cmd: String): String {
-            return try {
-//                val fullCmd = arrayOf("su", "-c", "sh -c '${cmd}'")
-//                val process = Runtime.getRuntime().exec(fullCmd)
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-                val output = process.inputStream.bufferedReader().readText()
-                val error = process.errorStream.bufferedReader().readText()
-                process.waitFor()
-                if (error.isNotBlank()) Log.e("WiFiConnect", "⚠️ stderr: $error")
-                if (output.isNotBlank()) Log.d("WiFiConnect", "ℹ️ stdout: $output")
-                output.trim()
-            } catch (e: Exception) {
-                Log.e("WiFiConnect", "❌ Lỗi khi chạy lệnh: $cmd\n${e.message}")
-                ""
-            }
-        }
-
         log("📶 Check WpaCli")
         val wpaPath = ensureWpaCliExists(context) ?: null
         val socketPath = getWpaSocketPath() ?: null
@@ -1097,12 +1080,18 @@ object WifiUtil {
         // 6. Gửi lệnh reconfigure
         log("📡 Reconfigure... connect to ssid: $ssid")
 //        val wpaPath = "/data/local/tmp/wpa_cli"
-
 //        val socketPath = "/data/vendor/wifi/wpa/sockets"
 
+        log("📡 Reconfigure... remove all network")
+        val result = clearAllNetworks(wpaPath, socketPath)
+        if (result) {
+            Log.d("WiFiConnect", "✅ Xóa tất cả mạng thành công.")
+        } else {
+            Log.e("WiFiConnect", "⚠️ Có lỗi khi xóa một số mạng.")
+        }
 
         log("📡 Reconfigure... remove_network")
-        runRootCommand("$wpaPath -p $socketPath -i wlan0 remove_network")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 remove_network 0")
         log("📡 Reconfigure... add_network")
         runRootCommand("$wpaPath -p $socketPath -i wlan0 add_network")
         log("📡 Reconfigure... set_network ssid")
@@ -1117,7 +1106,7 @@ object WifiUtil {
         log("📡 Reconfigure...select_network")
         runRootCommand("$wpaPath -p $socketPath -i wlan0 select_network 0")
 
-        runRootCommand("$wpaPath -p $socketPath -i wlan0 reconfigure")
+//        runRootCommand("$wpaPath -p $socketPath -i wlan0 reconfigure")
         runRootCommand("$wpaPath -p $socketPath -i wlan0 reconnect")
 
         // 6. Bật Wi-Fi
@@ -1601,5 +1590,58 @@ object WifiUtil {
         }
     }
 
+    fun clearAllNetworks(wpaCliPath: Any, socketPath: Any): Boolean {
+        val listCmd = "$wpaCliPath -p $socketPath -i wlan0 list_networks"
+        val networksOutput = runRootCommand(listCmd)
+
+        if (networksOutput.contains("UNKNOWN COMMAND", ignoreCase = true)) {
+            Log.e("WiFiConnect", "❌ Lệnh list_networks không hợp lệ.")
+            return false
+        }
+
+        val lines = networksOutput.lines()
+        if (lines.size <= 1) {
+            Log.d("WiFiConnect", "✅ Không có mạng nào trong danh sách.")
+            return true
+        }
+
+        var success = true
+
+        // Bỏ dòng đầu tiên (tiêu đề)
+        for (line in lines.drop(1)) {
+            val columns = line.trim().split("\t")
+            if (columns.isNotEmpty()) {
+                val networkId = columns[0]
+                val removeCmd = "$wpaCliPath -p $socketPath -i wlan0 remove_network $networkId"
+                val removeResult = runRootCommand(removeCmd)
+
+                if (removeResult.contains("OK")) {
+                    Log.d("WiFiConnect", "✅ Đã xóa network ID: $networkId")
+                } else {
+                    Log.e("WiFiConnect", "❌ Không thể xóa network ID: $networkId. Output: $removeResult")
+                    success = false
+                }
+            }
+        }
+
+        return success
+    }
+
+    fun runRootCommand(cmd: String): String {
+        return try {
+//                val fullCmd = arrayOf("su", "-c", "sh -c '${cmd}'")
+//                val process = Runtime.getRuntime().exec(fullCmd)
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+            val output = process.inputStream.bufferedReader().readText()
+            val error = process.errorStream.bufferedReader().readText()
+            process.waitFor()
+            if (error.isNotBlank()) Log.e("WiFiConnect", "⚠️ stderr: $error")
+            if (output.isNotBlank()) Log.d("WiFiConnect", "ℹ️ stdout: $output")
+            output.trim()
+        } catch (e: Exception) {
+            Log.e("WiFiConnect", "❌ Lỗi khi chạy lệnh: $cmd\n${e.message}")
+            ""
+        }
+    }
 
 }
