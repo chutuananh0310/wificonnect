@@ -1016,6 +1016,19 @@ object WifiUtil {
             }
         }
 
+        log("📶 Check WpaCli")
+        val wpaPath = ensureWpaCliExists(context) ?: null
+        val socketPath = getWpaSocketPath() ?: null
+
+        if (wpaPath == null ) {
+            log("📶 Không tìm thấy Lib điều khiển wifi")
+            return
+        }
+        if (socketPath == null) {
+            log("📶 Không tìm thấy Socket điều khiển wifi")
+            return
+        }
+
         log("📶 Bắt đầu kết nối tới SSID: $ssid")
 
         val tmpPath = "/data/local/tmp/wpa_supplicant.conf"
@@ -1027,9 +1040,9 @@ object WifiUtil {
         Thread.sleep(500)
 
         // 1. Tắt Wi-Fi
-        log("📴 Tắt Wi-Fi...")
-        runRootCommand("svc wifi disable")
-        Thread.sleep(1500)
+//        log("📴 Tắt Wi-Fi...")
+//        runRootCommand("svc wifi disable")
+//        Thread.sleep(1500)
 
         // 2. Ghi file wpa_supplicant mới
         log("📝 Tạo file cấu hình Wi-Fi...")
@@ -1054,20 +1067,20 @@ object WifiUtil {
         runRootCommand("chown system:wifi $finalPath")
         runRootCommand("chmod 660 $finalPath")
 
-        log("📶 Add suggestion")
-        val suggestion = WifiNetworkSuggestion.Builder()
-            .setSsid(ssid)
-            .setWpa2Passphrase(password)
-            .build()
-
-        val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
-
-        // Huỷ suggest cũ nếu có
-        if (currentSuggestions.isNotEmpty()) {
-            wifiManager.removeNetworkSuggestions(currentSuggestions)
-        }
-
-        wifiManager.addNetworkSuggestions(listOf(suggestion))
+//        log("📶 Add suggestion")
+//        val suggestion = WifiNetworkSuggestion.Builder()
+//            .setSsid(ssid)
+//            .setWpa2Passphrase(password)
+//            .build()
+//
+//        val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
+//
+//        // Huỷ suggest cũ nếu có
+//        if (currentSuggestions.isNotEmpty()) {
+//            wifiManager.removeNetworkSuggestions(currentSuggestions)
+//        }
+//
+//        wifiManager.addNetworkSuggestions(listOf(suggestion))
 
         // 4. Khởi động lại wpa_supplicant
         log("🔁 Khởi động lại wpa_supplicant...")
@@ -1076,38 +1089,27 @@ object WifiUtil {
         runRootCommand("setprop ctl.start wpa_supplicant")
         Thread.sleep(1500)
 
+        // 5. Bật Wi-Fi
+        log("📶 Bật lại Wi-Fi...")
+        runRootCommand("svc wifi enable")
+        Thread.sleep(5000)
+
+        // 6. Gửi lệnh reconfigure
+        log("📡 Reconfigure... connect to ssid: $ssid")
+//        val wpaPath = "/data/local/tmp/wpa_cli"
+
+//        val socketPath = "/data/vendor/wifi/wpa/sockets"
 
 
-        // 5. Gửi lệnh reconfigure
-        log("📡 Reconfigure...")
-        val wpaPath = "/data/local/tmp/wpa_cli"
-        val socketPath = "/data/vendor/wifi/wpa/sockets"
-//        "wpa_cli -i wlan0 add_network",
-//                "wpa_cli -i wlan0 set_network 0 ssid '\"$ssid\"'",
-//                "wpa_cli -i wlan0 set_network 0 psk '\"$password\"'",
-//                "wpa_cli -i wlan0 enable_network 0",
-//                "wpa_cli -i wlan0 save_config",
-//                "wpa_cli -i wlan0 select_network 0"
-//        ensureWpaCliExists(context)
-//        connectWithWpaCliAutoDetect(ssid, password)
-
-//        /data/local/tmp/wpa_cli -p $socketPath
-
+        log("📡 Reconfigure... remove_network")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 remove_network")
         log("📡 Reconfigure... add_network")
         runRootCommand("$wpaPath -p $socketPath -i wlan0 add_network")
         log("📡 Reconfigure... set_network ssid")
-//        val ssidQuoted = "\"$ssid\""
-//        val ssidEscaped = "\\\"$ssid\\\""
-//        val cmd = "$wpaPath -p $socketPath -i wlan0 set_network 0 ssid \"$ssidEscaped\""
-//        runRootCommand(cmd)
-//        val ssidEscaped = "\\\"$ssid\\\""
-        val quotedSsid = "\"$ssid\""
-        val command = "echo 'set_network 0 ssid $quotedSsid' | $wpaPath -p $socketPath -i wlan0"
-//        runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 ssid $ssidEscaped")
-        runRootCommand(command)
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 ssid \\\"$ssid\\\"")
 
         log("📡 Reconfigure... set_network psk")
-        runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 psk $password")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 psk \\\"$password\\\"")
         log("📡 Reconfigure... enable_network")
         runRootCommand("$wpaPath -p $socketPath -i wlan0 enable_network 0")
         log("📡 Reconfigure... save_config")
@@ -1119,8 +1121,8 @@ object WifiUtil {
         runRootCommand("$wpaPath -p $socketPath -i wlan0 reconnect")
 
         // 6. Bật Wi-Fi
-        log("📶 Bật lại Wi-Fi...")
-        runRootCommand("svc wifi enable")
+//        log("📶 Bật lại Wi-Fi...")
+//        runRootCommand("svc wifi enable")
 
         log("✅ Kết thúc. Chờ vài giây để kết nối hoàn tất.")
     }
@@ -1305,14 +1307,15 @@ object WifiUtil {
         return ok
     }
 
-    fun ensureWpaCliExists(context: Context) {
+    //new
+    fun ensureWpaCliExists(context: Context): String? {
         val destPath = "/data/local/tmp/wpa_cli"
         val destFile = File(destPath)
 
         // Nếu file đã tồn tại, không cần copy lại
         if (destFile.exists()) {
             Log.d("WiFiConnect", "✅ File wpa_cli đã tồn tại tại $destPath")
-            return
+            return destPath
         }
 
         val cacheFile = File(context.cacheDir, "wpa_cli")
@@ -1328,7 +1331,7 @@ object WifiUtil {
                 Log.d("WiFiConnect", "✅ Đã copy vào cache: ${cacheFile.absolutePath}")
             } catch (e: Exception) {
                 Log.e("WiFiConnect", "❌ Lỗi khi copy wpa_cli vào cache: ${e.message}")
-                return
+                return null
             }
         }
 
@@ -1344,9 +1347,13 @@ object WifiUtil {
             process.waitFor()
 
             Log.d("WiFiConnect", "✅ Đã copy và chmod xong wpa_cli tại /data/local/tmp")
+            return destPath
         } catch (e: Exception) {
             Log.e("WiFiConnect", "❌ Lỗi khi chuyển wpa_cli bằng su: ${e.message}")
+            return null
         }
+
+        return null
     }
 
 
@@ -1411,6 +1418,7 @@ object WifiUtil {
 
     @RequiresApi(Build.VERSION_CODES.Q)
     fun connectWifiViaAccessibility(context: Context, ssid: String, password: String) {
+
         checkAndRequestAccessibility(context)
 
         Log.d("WifiConnect", "wifi_prefs $ssid | $password")
@@ -1557,16 +1565,26 @@ object WifiUtil {
         )
 
         for (parent in possibleParents) {
-            val socketFile = File(parent, "wlan0")
-            if (socketFile.exists()) {
-                Log.d("WiFiConnect", "✅ Socket tìm thấy tại: ${socketFile.absolutePath}")
-                return parent
+            val cmd = "ls $parent/wlan0"
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+                val result = process.inputStream.bufferedReader().readText().trim()
+                val error = process.errorStream.bufferedReader().readText().trim()
+                process.waitFor()
+
+                if (error.isBlank() && result.isNotBlank()) {
+                    Log.d("WiFiConnect", "✅ Socket tìm thấy tại: $parent/wlan0")
+                    return parent
+                }
+            } catch (e: Exception) {
+                Log.e("WiFiConnect", "❌ Lỗi khi kiểm tra socket tại $parent: ${e.message}")
             }
         }
 
         Log.e("WiFiConnect", "🚫 Không tìm thấy socket wlan0 trong các thư mục đã biết.")
         return null
     }
+
 
     fun runWpaCliCommand(command: String): String {
         val socketPath = getWpaSocketPath() ?: return "Socket not found"
