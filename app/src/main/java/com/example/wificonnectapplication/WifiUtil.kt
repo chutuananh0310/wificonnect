@@ -6,6 +6,7 @@ package com.example.wificonnectapplication
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Context.MODE_PRIVATE
 import android.content.Intent
@@ -42,13 +43,15 @@ import com.example.wificonnectapplication.PermissionChecker.checkChangeWifiState
 import com.example.wificonnectapplication.PermissionChecker.checkWriteSettingsPermission
 import java.io.File
 import android.content.SharedPreferences
-
+import android.text.TextUtils
+import java.io.FileOutputStream
 
 
 object WifiUtil {
 
     private const val TAG = "WifiUtil"
     private const val REQUEST_LOCATION_SETTINGS = 123 // Mã request duy nhất
+    private var currentSuggestions: List<WifiNetworkSuggestion> = emptyList()
 
 
     fun isWifiEnabled(context: Context): Boolean {
@@ -414,7 +417,8 @@ object WifiUtil {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             Log.d(TAG, "1 Build.VERSION" + Build.VERSION.SDK_INT)
-            openWifiSettingsWithSuggestion(context, ssid, password.toString())
+//            openWifiSettingsWithSuggestion(context, ssid, password.toString())
+            connectToWifiRoot(context, ssid, password.toString())
         }
         else {
             Log.d(TAG, "2 Build.VERSION" + Build.VERSION.SDK_INT)
@@ -997,15 +1001,17 @@ object WifiUtil {
 
         fun runRootCommand(cmd: String): String {
             return try {
+//                val fullCmd = arrayOf("su", "-c", "sh -c '${cmd}'")
+//                val process = Runtime.getRuntime().exec(fullCmd)
                 val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-                val result = process.inputStream.bufferedReader().readText()
+                val output = process.inputStream.bufferedReader().readText()
                 val error = process.errorStream.bufferedReader().readText()
                 process.waitFor()
-                if (error.isNotBlank()) log("⚠️ stderr: $error")
-                if (result.isNotBlank()) log("ℹ️ stdout: $result")
-                result.trim()
+                if (error.isNotBlank()) Log.e("WiFiConnect", "⚠️ stderr: $error")
+                if (output.isNotBlank()) Log.d("WiFiConnect", "ℹ️ stdout: $output")
+                output.trim()
             } catch (e: Exception) {
-                log("❌ Lỗi khi chạy lệnh: $cmd\n${e.message}")
+                Log.e("WiFiConnect", "❌ Lỗi khi chạy lệnh: $cmd\n${e.message}")
                 ""
             }
         }
@@ -1048,6 +1054,21 @@ object WifiUtil {
         runRootCommand("chown system:wifi $finalPath")
         runRootCommand("chmod 660 $finalPath")
 
+        log("📶 Add suggestion")
+        val suggestion = WifiNetworkSuggestion.Builder()
+            .setSsid(ssid)
+            .setWpa2Passphrase(password)
+            .build()
+
+        val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
+
+        // Huỷ suggest cũ nếu có
+        if (currentSuggestions.isNotEmpty()) {
+            wifiManager.removeNetworkSuggestions(currentSuggestions)
+        }
+
+        wifiManager.addNetworkSuggestions(listOf(suggestion))
+
         // 4. Khởi động lại wpa_supplicant
         log("🔁 Khởi động lại wpa_supplicant...")
         runRootCommand("setprop ctl.stop wpa_supplicant")
@@ -1055,18 +1076,47 @@ object WifiUtil {
         runRootCommand("setprop ctl.start wpa_supplicant")
         Thread.sleep(1500)
 
+
+
         // 5. Gửi lệnh reconfigure
         log("📡 Reconfigure...")
         val wpaPath = "/data/local/tmp/wpa_cli"
-        val suggestion = WifiNetworkSuggestion.Builder()
-            .setSsid(ssid)
-            .setWpa2Passphrase(password)
-            .build()
-        val wifiManager = context.getSystemService(WifiManager::class.java)
-        wifiManager.addNetworkSuggestions(listOf(suggestion))
+        val socketPath = "/data/vendor/wifi/wpa/sockets"
+//        "wpa_cli -i wlan0 add_network",
+//                "wpa_cli -i wlan0 set_network 0 ssid '\"$ssid\"'",
+//                "wpa_cli -i wlan0 set_network 0 psk '\"$password\"'",
+//                "wpa_cli -i wlan0 enable_network 0",
+//                "wpa_cli -i wlan0 save_config",
+//                "wpa_cli -i wlan0 select_network 0"
+//        ensureWpaCliExists(context)
+//        connectWithWpaCliAutoDetect(ssid, password)
 
-        runRootCommand("$wpaPath -i wlan0 reconfigure")
-        runRootCommand("$wpaPath -i wlan0 reconnect")
+//        /data/local/tmp/wpa_cli -p $socketPath
+
+        log("📡 Reconfigure... add_network")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 add_network")
+        log("📡 Reconfigure... set_network ssid")
+//        val ssidQuoted = "\"$ssid\""
+//        val ssidEscaped = "\\\"$ssid\\\""
+//        val cmd = "$wpaPath -p $socketPath -i wlan0 set_network 0 ssid \"$ssidEscaped\""
+//        runRootCommand(cmd)
+//        val ssidEscaped = "\\\"$ssid\\\""
+        val quotedSsid = "\"$ssid\""
+        val command = "echo 'set_network 0 ssid $quotedSsid' | $wpaPath -p $socketPath -i wlan0"
+//        runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 ssid $ssidEscaped")
+        runRootCommand(command)
+
+        log("📡 Reconfigure... set_network psk")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 psk $password")
+        log("📡 Reconfigure... enable_network")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 enable_network 0")
+        log("📡 Reconfigure... save_config")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 save_config")
+        log("📡 Reconfigure...select_network")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 select_network 0")
+
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 reconfigure")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 reconnect")
 
         // 6. Bật Wi-Fi
         log("📶 Bật lại Wi-Fi...")
@@ -1255,22 +1305,113 @@ object WifiUtil {
         return ok
     }
 
+    fun ensureWpaCliExists(context: Context) {
+        val destPath = "/data/local/tmp/wpa_cli"
+        val destFile = File(destPath)
+
+        // Nếu file đã tồn tại, không cần copy lại
+        if (destFile.exists()) {
+            Log.d("WiFiConnect", "✅ File wpa_cli đã tồn tại tại $destPath")
+            return
+        }
+
+        val cacheFile = File(context.cacheDir, "wpa_cli")
+
+        if (!cacheFile.exists()) {
+            try {
+                Log.d("WiFiConnect", "📦 Copy wpa_cli từ assets vào cache...")
+                context.assets.open("wpa_cli").use { input ->
+                    FileOutputStream(cacheFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.d("WiFiConnect", "✅ Đã copy vào cache: ${cacheFile.absolutePath}")
+            } catch (e: Exception) {
+                Log.e("WiFiConnect", "❌ Lỗi khi copy wpa_cli vào cache: ${e.message}")
+                return
+            }
+        }
+
+        try {
+            Log.d("WiFiConnect", "🔐 Đang chuyển wpa_cli vào /data/local/tmp với quyền root...")
+
+            val command = """
+            cp ${cacheFile.absolutePath} /data/local/tmp/wpa_cli
+            chmod 755 /data/local/tmp/wpa_cli
+        """.trimIndent()
+
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+            process.waitFor()
+
+            Log.d("WiFiConnect", "✅ Đã copy và chmod xong wpa_cli tại /data/local/tmp")
+        } catch (e: Exception) {
+            Log.e("WiFiConnect", "❌ Lỗi khi chuyển wpa_cli bằng su: ${e.message}")
+        }
+    }
+
 
     @RequiresApi(Build.VERSION_CODES.Q)
     fun openWifiSettingsWithSuggestion(context: Context, ssid: String, password: String) {
+        val shell = Runtime.getRuntime()
+
+        fun runCommand(cmd: String): Pair<Boolean, String> {
+            return try {
+                val process = shell.exec(arrayOf("su", "-c", cmd))
+                val exitCode = process.waitFor()
+                val output = process.inputStream.bufferedReader().readText().trim()
+                val error = process.errorStream.bufferedReader().readText().trim()
+                Pair(exitCode == 0, if (output.isNotEmpty()) output else error)
+            } catch (e: Exception) {
+                Pair(false, e.message ?: "Unknown error")
+            }
+        }
+
+        val logs = StringBuilder()
+
+        val (disableOk, disableLog) = runCommand("svc wifi disable")
+        logs.appendLine(" - Tắt Wi-Fi: ${if (disableOk) "✅" else "❌ $disableLog"}")
+        Thread.sleep(3000)
+
+
+
+        val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
+
+        // Huỷ suggest cũ nếu có
+        if (currentSuggestions.isNotEmpty()) {
+            wifiManager.removeNetworkSuggestions(currentSuggestions)
+        }
+
+        // Tạo suggest mới
         val suggestion = WifiNetworkSuggestion.Builder()
             .setSsid(ssid)
             .setWpa2Passphrase(password)
             .build()
 
-        val suggestionsList = listOf(suggestion)
+        currentSuggestions = listOf(suggestion)
 
-        val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
-        val status = wifiManager.addNetworkSuggestions(suggestionsList)
+        val status = wifiManager.addNetworkSuggestions(currentSuggestions)
+        if (status == WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
+            Log.d("WiFiSuggest", "✅ Suggest Wi-Fi thành công")
+        } else {
+            Log.e("WiFiSuggest", "❌ Lỗi suggest Wi-Fi: $status")
+        }
+
+        val (enableOk, enableLog) = runCommand("svc wifi enable")
+        logs.appendLine(" - Bật Wi-Fi: ${if (enableOk) "✅" else "❌ $enableLog"}")
 
         val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+
+        context.startActivity(intent)
+
+
+
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    fun connectWifiViaAccessibility(context: Context, ssid: String, password: String) {
+        checkAndRequestAccessibility(context)
 
         Log.d("WifiConnect", "wifi_prefs $ssid | $password")
         val prefs = context.applicationContext.getSharedPreferences("wifi_prefs", MODE_PRIVATE)
@@ -1280,9 +1421,167 @@ object WifiUtil {
             .putString("password", password)
             .apply()
 
-        context.startActivity(intent)
-
-
-
     }
+
+
+//    private val accessibilityServiceId by lazy {
+//        ComponentName(this, WifiAccessibilityService::class.java).flattenToString()
+//    }
+
+
+    private fun checkAndRequestAccessibility(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val accessibilityServiceId by lazy {
+                ComponentName(context, WifiAccessibilityService::class.java).flattenToString()
+            }
+            if (!isAccessibilityServiceEnabled(context, accessibilityServiceId)) {
+                Log.d("WiFiConnect", "⚠️ Trợ năng chưa được bật. Hiển thị cảnh báo...")
+
+                android.app.AlertDialog.Builder(context)
+                    .setTitle("Yêu cầu quyền Trợ năng")
+                    .setMessage("Ứng dụng cần quyền Trợ năng để tự động kết nối Wi-Fi.\n\nBấm OK để mở cài đặt và cấp quyền.")
+                    .setCancelable(false) // không cho bấm ra ngoài
+                    .setPositiveButton("OK") { _, _ ->
+                        val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    }
+                    .show()
+            } else {
+                Log.d("WiFiConnect", "✅ Trợ năng đã được bật.")
+                // Có thể tiếp tục thực hiện kết nối Wi-Fi ở đây
+            }
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(context: Context, serviceId: String): Boolean {
+        val enabled = try {
+            Settings.Secure.getInt(
+                context.contentResolver,
+                Settings.Secure.ACCESSIBILITY_ENABLED
+            )
+        } catch (e: Settings.SettingNotFoundException) {
+            0
+        }
+
+        if (enabled == 1) {
+            val settingValue = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            val colonSplitter = TextUtils.SimpleStringSplitter(':')
+            colonSplitter.setString(settingValue)
+            while (colonSplitter.hasNext()) {
+                if (colonSplitter.next().equals(serviceId, ignoreCase = true)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    fun connectWithWpaCliAutoDetect(targetSSID: String, networkId: String) {
+        val possibleSocketPaths = listOf(
+            "/data/misc/wifi/sockets",
+            "/data/vendor/wifi/wpa/sockets",
+            "/data/vendor/wifi/wpa_supplicant",
+            "/data/misc/wifi",
+            "/data/vendor/wifi"
+        )
+
+        var detectedPath: String? = null
+
+        for (path in possibleSocketPaths) {
+            val socketFile = File("$path/wlan0")
+            if (socketFile.exists()) {
+                detectedPath = path
+                Log.d("WiFiConnect", "✅ Tìm thấy socket wlan0 tại: $path")
+                break
+            }
+        }
+
+        if (detectedPath == null) {
+            Log.e("WiFiConnect", "🚫 Không tìm thấy socket wlan0 trong các thư mục đã biết.")
+            return
+        }
+
+        try {
+            val statusCmd = arrayOf("su", "-c", "/data/local/tmp/wpa_cli -p $detectedPath -i wlan0 status")
+            val statusOutput = Runtime.getRuntime().exec(statusCmd).inputStream.bufferedReader().use { it.readText() }
+
+            Log.d("WiFiConnect", "📡 Kết quả status:\n$statusOutput")
+
+            val currentSSID = Regex("ssid=(.+)").find(statusOutput)?.groupValues?.get(1)?.trim('"')
+
+            if (currentSSID == targetSSID) {
+                Log.d("WiFiConnect", "✅ Đã kết nối đúng SSID: $currentSSID")
+                return
+            }
+
+            Log.w("WiFiConnect", "🔄 SSID hiện tại là: $currentSSID. Đang chuyển sang SSID: $targetSSID")
+
+            val commands = listOf(
+                "wpa_cli -p $detectedPath -i wlan0 disconnect",
+                "wpa_cli -p $detectedPath -i wlan0 select_network $networkId",
+                "wpa_cli -p $detectedPath -i wlan0 reconnect"
+            )
+
+            for (cmd in commands) {
+                val fullCmd = arrayOf("su", "-c", "/data/local/tmp/$cmd")
+                val process = Runtime.getRuntime().exec(fullCmd)
+                val stdout = process.inputStream.bufferedReader().use { it.readText() }
+                val stderr = process.errorStream.bufferedReader().use { it.readText() }
+
+                Log.d("WiFiConnect", "🔧 Lệnh `$cmd` → Kết quả:\n$stdout")
+                if (stderr.isNotBlank()) {
+                    Log.w("WiFiConnect", "⚠️ stderr: $stderr")
+                }
+
+                process.waitFor()
+            }
+
+            Log.d("WiFiConnect", "🚀 Đã gửi lệnh kết nối đến SSID: $targetSSID (network id: $networkId)")
+
+        } catch (e: Exception) {
+            Log.e("WiFiConnect", "❌ Lỗi khi thực hiện wpa_cli: ${e.message}", e)
+        }
+    }
+
+    fun getWpaSocketPath(): String? {
+        val possibleParents = listOf(
+            "/data/vendor/wifi/wpa/sockets",
+            "/data/vendor/wifi",
+            "/data/misc/wifi",
+            "/data/misc/wifi/sockets"
+        )
+
+        for (parent in possibleParents) {
+            val socketFile = File(parent, "wlan0")
+            if (socketFile.exists()) {
+                Log.d("WiFiConnect", "✅ Socket tìm thấy tại: ${socketFile.absolutePath}")
+                return parent
+            }
+        }
+
+        Log.e("WiFiConnect", "🚫 Không tìm thấy socket wlan0 trong các thư mục đã biết.")
+        return null
+    }
+
+    fun runWpaCliCommand(command: String): String {
+        val socketPath = getWpaSocketPath() ?: return "Socket not found"
+
+        val cmd = arrayOf("su", "-c", "/data/local/tmp/wpa_cli -p $socketPath -i wlan0 $command")
+        return try {
+            val process = ProcessBuilder(*cmd).redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            output
+        } catch (e: Exception) {
+            Log.e("WiFiConnect", "🚫 Lỗi khi chạy wpa_cli: ${e.message}")
+            "Error: ${e.message}"
+        }
+    }
+
+
 }

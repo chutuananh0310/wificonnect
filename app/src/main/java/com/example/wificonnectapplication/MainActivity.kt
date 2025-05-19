@@ -61,9 +61,6 @@ class MainActivity : AppCompatActivity() {
 
         WifiUtil.setWifiEnabled(this, true) // Bật Wi-Fi
 
-        checkAndRequestAccessibility()
-
-
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         db = WifiDatabase.getInstance(this)
 
@@ -249,55 +246,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        checkAndRequestAccessibility()
+//        checkAndRequestAccessibility()
     }
 
-    private fun checkAndRequestAccessibility() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (!isAccessibilityServiceEnabled(this, accessibilityServiceId)) {
-                Log.d("WiFiConnect", "⚠️ Trợ năng chưa được bật. Hiển thị cảnh báo...")
 
-                AlertDialog.Builder(this)
-                    .setTitle("Yêu cầu quyền Trợ năng")
-                    .setMessage("Ứng dụng cần quyền Trợ năng để tự động kết nối Wi-Fi.\n\nBấm OK để mở cài đặt và cấp quyền.")
-                    .setCancelable(false) // không cho bấm ra ngoài
-                    .setPositiveButton("OK") { _, _ ->
-                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        startActivity(intent)
-                    }
-                    .show()
-            } else {
-                Log.d("WiFiConnect", "✅ Trợ năng đã được bật.")
-                // Có thể tiếp tục thực hiện kết nối Wi-Fi ở đây
-            }
-        }
-    }
 
-    private fun isAccessibilityServiceEnabled(context: Context, serviceId: String): Boolean {
-        val enabled = try {
-            Settings.Secure.getInt(
-                context.contentResolver,
-                Settings.Secure.ACCESSIBILITY_ENABLED
-            )
-        } catch (e: Settings.SettingNotFoundException) {
-            0
-        }
-
-        if (enabled == 1) {
-            val settingValue = Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: return false
-            val colonSplitter = TextUtils.SimpleStringSplitter(':')
-            colonSplitter.setString(settingValue)
-            while (colonSplitter.hasNext()) {
-                if (colonSplitter.next().equals(serviceId, ignoreCase = true)) {
-                    return true
-                }
-            }
-        }
-        return false
-    }
 
 }
