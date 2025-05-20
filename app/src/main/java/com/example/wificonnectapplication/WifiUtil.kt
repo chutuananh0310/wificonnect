@@ -34,16 +34,12 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import androidx.appcompat.app.AlertDialog
 import android.provider.Settings
-import android.net.wifi.WifiNetworkSpecifier
 import android.net.wifi.WifiNetworkSuggestion
 import androidx.annotation.RequiresApi
-import androidx.core.content.ContextCompat.startActivity
 import androidx.fragment.app.FragmentActivity
-import com.example.wificonnectapplication.PermissionChecker.checkChangeWifiStatePermission
-import com.example.wificonnectapplication.PermissionChecker.checkWriteSettingsPermission
 import java.io.File
-import android.content.SharedPreferences
 import android.text.TextUtils
+import kotlinx.coroutines.CancellableContinuation
 import java.io.FileOutputStream
 
 
@@ -418,7 +414,7 @@ object WifiUtil {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             Log.d(TAG, "1 Build.VERSION" + Build.VERSION.SDK_INT)
 //            openWifiSettingsWithSuggestion(context, ssid, password.toString())
-            connectToWifiRoot(context, ssid, password.toString())
+            connectToWifiRoot(context, ssid, password.toString(), continuation)
         }
         else {
             Log.d(TAG, "2 Build.VERSION" + Build.VERSION.SDK_INT)
@@ -996,7 +992,12 @@ object WifiUtil {
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    fun connectToWifiRoot(context: Context, ssid: String, password: String) {
+    fun connectToWifiRoot(
+        context: Context,
+        ssid: String,
+        password: String,
+        continuation: CancellableContinuation<Boolean>
+    ) {
         fun log(message: String) = Log.d("WifiConnect", message)
 
         log("📶 Check WpaCli")
@@ -1005,10 +1006,12 @@ object WifiUtil {
 
         if (wpaPath == null ) {
             log("📶 Không tìm thấy Lib điều khiển wifi")
+            continuation.resume(false)
             return
         }
         if (socketPath == null) {
             log("📶 Không tìm thấy Socket điều khiển wifi")
+            continuation.resume(false)
             return
         }
 
@@ -1114,7 +1117,41 @@ object WifiUtil {
 //        runRootCommand("svc wifi enable")
 
         log("✅ Kết thúc. Chờ vài giây để kết nối hoàn tất.")
+
+        // Chờ thêm vài giây để chắc chắn đã kết nối
+        Thread.sleep(5000)
+
+        log("⏳ Chờ kết nối Wi-Fi tới SSID: $ssid")
+        val connected = waitForWifiConnection(context, ssid)
+
+        if (connected) {
+            log("✅ Kết nối thành công.")
+            continuation.resume(true)
+        } else {
+            log("❌ Kết nối thất bại.")
+            continuation.resume(false)
+        }
     }
+
+    fun waitForWifiConnection(context: Context, targetSsid: String, timeoutMs: Long = 15000): Boolean {
+        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val startTime = System.currentTimeMillis()
+        val cleanTargetSsid = targetSsid.replace("\"", "")
+
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            val currentSsid = wifiManager.connectionInfo?.ssid?.replace("\"", "")
+            if (currentSsid == cleanTargetSsid) {
+                Log.d("WiFiConnect", "✅ Đã kết nối tới SSID: $currentSsid")
+                return true
+            }
+
+            Thread.sleep(1000)
+        }
+
+        Log.e("WiFiConnect", "❌ Timeout: Không kết nối được tới SSID: $targetSsid")
+        return false
+    }
+
 
     @RequiresApi(Build.VERSION_CODES.Q)
     fun connectToWifiRoot2(context: Context, ssid: String, password: String) {

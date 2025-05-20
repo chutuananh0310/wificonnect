@@ -57,47 +57,9 @@ class WifiAdapter(
 
         holder.btnConnect.setOnClickListener {
 
-//            val result: String = connectWifiWithShell(wifi.ssid, wifi.password)
-//
-//            // Xử lý kết quả
-//            if (result.contains("OK") || result.contains("SUCCESS")) {
-//                // Kết nối có vẻ thành công (tùy thuộc vào output thực tế)
-//                // Hiển thị thông báo cho người dùng
-//                GlobalScope.launch {
-//                    val db = WifiDatabase.getInstance(context)
-//                    db.wifiDao().markAsUsed(wifi.id)
-//                    onRefresh()
-//                }
-//            } else {
-//                // Kết nối thất bại
-//                // Hiển thị thông báo lỗi cho người dùng
-//            }
-
-//            WifiUtil.scanWifiNetworks(context) { scanResults ->
-//                // Xử lý kết quả quét
-//                for (result in scanResults) {
-//                    // ...
-//                }
-//            }
-
-            // Kết nối đến mạng Wi-Fi khi cần
-            // WifiUtil.connectToWifi(this, "Tên_WiFi", "Mật_Khẩu")
-//            val success = WifiHelper.connect(context, wifi.ssid, wifi.password)
-//            val success = WifiUtil.connectToWifi2(context, wifi.ssid, wifi.password)
-
-//            progressDialog = ProgressDialog(context).apply { // 'this' là Activity context
-//                setMessage("Đang kết nối với ${wifi.ssid}...")
-//                setCancelable(false) // Không cho phép người dùng hủy bằng cách chạm ra ngoài
-//                show()
-//            }
-
             Toast.makeText(context, "Đang kết nối với " + wifi.ssid, Toast.LENGTH_SHORT).show()
             GlobalScope.launch {
-//                val isConnected = connectToWifiAndWaitForConnection(context, wifi.ssid, wifi.password)
                 val isConnected = connectWifi(context, wifi.ssid, wifi.password)
-
-
-//                progressDialog?.dismiss() // Đóng dialog khi kết nối xong
                 if (isConnected) {
                     Log.d("WifiUtil", "Kết nối thành công với " + wifi.ssid)
                     // Thực hiện các hành động sau khi kết nối thành công
@@ -109,9 +71,6 @@ class WifiAdapter(
                     try {
                         val db = WifiDatabase.getInstance(context)
                         db.wifiDao().markAsUsed(wifi.id)
-//                        db.withTransaction {
-//                            db.wifiDao().markAsUsed(wifi.id)
-//                        }
 
                         delay(500) // Chờ 500ms
                         onRefresh()
@@ -133,25 +92,6 @@ class WifiAdapter(
 //            // Lấy thông tin mạng đã kết nối
             val connectedInfo = WifiUtil.getConnectedWifiInfo(context)
 
-
-//            if (success) {
-//                GlobalScope.launch {
-//                    try {
-//                        val db = WifiDatabase.getInstance(context)
-////                        db.wifiDao().markAsUsed(wifi.id)
-//                        db.withTransaction {
-//                            db.wifiDao().markAsUsed(wifi.id)
-//                        }
-//
-//                        delay(500) // Chờ 500ms
-//                        onRefresh()
-//                    }
-//                    catch (e: Exception) {
-//                        Log.e("db", "Lỗi data", e)
-//                    }
-//
-//                }
-//            }
         }
 
         holder.btnEdit.setOnClickListener {

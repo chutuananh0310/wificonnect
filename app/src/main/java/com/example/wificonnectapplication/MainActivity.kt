@@ -27,6 +27,10 @@ import android.os.Process
 import android.util.Log
 import android.provider.Settings
 import android.text.TextUtils
+import androidx.room.withTransaction
+import com.example.wificonnectapplication.WifiUtil.connectWifi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlin.jvm.java
 
 private const val PREF_NAME = "ImportSettings"
@@ -77,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         val btnAdd = findViewById<Button>(R.id.btnAdd)
         val btnRefresh = findViewById<Button>(R.id.btnRefresh)
         val btnImport = findViewById<Button>(R.id.btnImport)
+        val btnRandomConnect = findViewById<Button>(R.id.btnRandomConnect)
 
         recyclerView.layoutManager = LinearLayoutManager(this)
 
@@ -109,6 +114,56 @@ class MainActivity : AppCompatActivity() {
 
         btnImport.setOnClickListener {
             showImportDialog()
+        }
+
+        btnRandomConnect.setOnClickListener {
+            if (wifiList.isEmpty()) {
+                Toast.makeText(this, "📭 Danh sách Wi-Fi rỗng", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // Chọn ngẫu nhiên một mạng Wi-Fi
+            val randomNetwork = wifiList.random()
+            val context = this // <- lưu lại context đúng
+
+            Toast.makeText(this, "🔌 Đang kết nối tới: ${randomNetwork.ssid}", Toast.LENGTH_SHORT).show()
+
+            // Gọi hàm kết nối
+//            connectToWifiRoot(this, randomNetwork.ssid, randomNetwork.password)
+            GlobalScope.launch {
+                val isConnected = connectWifi(context, randomNetwork.ssid, randomNetwork.password)
+                if (isConnected) {
+                    Log.d("WifiUtil", "Kết nối thành công với " + randomNetwork.ssid)
+                    // Thực hiện các hành động sau khi kết nối thành công
+
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context.applicationContext, "Kết nối thành công với " + randomNetwork.ssid, Toast.LENGTH_SHORT).show()
+                    }
+
+
+                    try {
+                        val db = WifiDatabase.getInstance(context)
+//                        db.wifiDao().markAsUsed(randomNetwork.id)
+                        db.withTransaction {
+                            db.wifiDao().markAsUsed(randomNetwork.id)
+                        }
+
+                        delay(500) // Chờ 500ms
+                        loadWifiList()
+                    }
+                    catch (e: Exception) {
+                        Log.e("db", "Lỗi data", e)
+                    }
+                } else {
+                    Log.e("WifiUtil", "Không thể kết nối với " + randomNetwork.ssid)
+                    // Xử lý lỗi kết nối
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context.applicationContext, "Không thể kết nối với " + randomNetwork.ssid, Toast.LENGTH_SHORT).show()
+                    }
+
+
+                }
+            }
         }
     }
 
