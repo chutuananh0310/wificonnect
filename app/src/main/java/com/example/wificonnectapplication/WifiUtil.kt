@@ -415,6 +415,15 @@ object WifiUtil {
             Log.d(TAG, "1 Build.VERSION" + Build.VERSION.SDK_INT)
 //            openWifiSettingsWithSuggestion(context, ssid, password.toString())
             connectToWifiRoot(context, ssid, password.toString(), continuation)
+
+                logWifiDiagnostics()
+
+                val result2 = runShellAsRoot("dumpsys wifi | grep SSID")
+                Log.d("WifiStatus", result2)
+
+//            adb logcat -s wpa_supplicant
+            val result3 = runShellAsRoot("adb logcat -s wpa_supplicant")
+            Log.d("wpa_supplicant", result3)
         }
         else {
             Log.d(TAG, "2 Build.VERSION" + Build.VERSION.SDK_INT)
@@ -1028,7 +1037,9 @@ object WifiUtil {
         // 1. Tắt Wi-Fi
 //        log("📴 Tắt Wi-Fi...")
 //        runRootCommand("svc wifi disable")
-//        Thread.sleep(1500)
+//        runRootCommand("stop wifi_hal_legacy_hal")
+//        runRootCommand("stop wpa_supplicant")
+//        Thread.sleep(3000)
 
         // 2. Ghi file wpa_supplicant mới
         log("📝 Tạo file cấu hình Wi-Fi...")
@@ -1069,11 +1080,11 @@ object WifiUtil {
 //        wifiManager.addNetworkSuggestions(listOf(suggestion))
 
         // 4. Khởi động lại wpa_supplicant
-        log("🔁 Khởi động lại wpa_supplicant...")
-        runRootCommand("setprop ctl.stop wpa_supplicant")
-        Thread.sleep(500)
-        runRootCommand("setprop ctl.start wpa_supplicant")
-        Thread.sleep(1500)
+//        log("🔁 Khởi động lại wpa_supplicant...")
+//        runRootCommand("setprop ctl.stop wpa_supplicant")
+//        Thread.sleep(500)
+//        runRootCommand("setprop ctl.start wpa_supplicant")
+//        Thread.sleep(1500)
 
         // 5. Bật Wi-Fi
         log("📶 Bật lại Wi-Fi...")
@@ -1099,6 +1110,10 @@ object WifiUtil {
         runRootCommand("$wpaPath -p $socketPath -i wlan0 add_network")
         log("📡 Reconfigure... set_network ssid")
         runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 ssid \\\"$ssid\\\"")
+
+//        set_network 0 id_str "Workplace_02"
+        log("📡 Reconfigure... set_network id_str")
+        runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 id_str \\\"$ssid\\\"")
 
         log("📡 Reconfigure... set_network psk")
         runRootCommand("$wpaPath -p $socketPath -i wlan0 set_network 0 psk \\\"$password\\\"")
